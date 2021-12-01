@@ -3,8 +3,8 @@
 #include "IOEMBC-1000_global.h"
 namespace embc {
     namespace io {
-        uint8_t read(uint8_t addr);
-        bool write(uint8_t addr, uint8_t v);
+        uint8_t read(uint8_t target_addr);
+        bool write(uint8_t target_addr, uint8_t v);
     }
 
     namespace gpio {
@@ -36,8 +36,8 @@ namespace embc {
         bool write(bool on, const char * pin_alias);
         bool write(bool on, pin_t pin);
 
-        uint8_t read(int pin_alias);
-        uint8_t read(const char * pin_alias);
+        bool read(int pin_alias);
+        bool read(const char * pin_alias);
         bool read(pin_t pin);
     }
 
