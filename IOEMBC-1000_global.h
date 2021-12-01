@@ -1,0 +1,12 @@
+#ifndef IOEMBC1000_GLOBAL_H
+#define IOEMBC1000_GLOBAL_H
+
+#include <QtCore/qglobal.h>
+
+#if defined(IOEMBC1000_LIBRARY)
+#  define IOEMBC1000_EXPORT Q_DECL_EXPORT
+#else
+#  define IOEMBC1000_EXPORT Q_DECL_IMPORT
+#endif
+
+#endif // IOEMBC1000_GLOBAL_H
