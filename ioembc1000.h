@@ -1,6 +1,11 @@
 #ifndef IOEMBC1000_H
 #define IOEMBC1000_H
-#include "IOEMBC-1000_global.h"
+#include <stdint.h>
+
+#ifdef IOEMBC1000_QT
+#include <QObject>
+#endif
+
 namespace embc {
     namespace io {
         uint8_t read(uint8_t target_addr);
@@ -8,6 +13,7 @@ namespace embc {
     }
 
     namespace gpio {
+
         enum pin_t {
             GPI0 = (1 << 4),
             GPI1 = (1 << 7),
@@ -28,6 +34,25 @@ namespace embc {
             GPO7 = (1 << 3)
         };
 
+#ifdef IOEMBC1000_QT
+        class IOEMBC1000 : public QObject {
+            Q_OBJECT
+        public:
+            static IOEMBC1000 * instance();
+
+        Q_SIGNALS:
+            void pinChanged(pin_t pin, bool on);
+
+        private:
+            IOEMBC1000() {
+                startTimer(10);
+            }
+            virtual void timerEvent(QTimerEvent *) override;
+        };
+#endif
+
+
+
 
         void set_alias(pin_t pin, int alias);
         void set_alias(pin_t pin, const char * alias);
@@ -45,12 +70,4 @@ namespace embc {
     void wdt_on();
     void wdt_off();
 }
-
-
-class IOEMBC1000_EXPORT IOEMBC1000
-{
-public:
-    IOEMBC1000();
-};
-
 #endif // IOEMBC1000_H

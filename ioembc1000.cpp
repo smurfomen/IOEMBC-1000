@@ -275,7 +275,6 @@ namespace embc {
 #define		VX900_SMBUS_HOST_CONFIGURE			0xD2
 #define		VX900_SMBUS_HOST_CONTROLER_ENABLE		0x01
 
-
             auto PCI_read = []() -> uint32_t
             {
                 uint32_t dwAddrVal;
@@ -304,10 +303,22 @@ namespace embc {
 
                 }
 
+                device_i()
+                    : vendor_id(0),
+                      device_id(0),
+                      pci_base(0),
+                      offset_bus(0),
+                      mask_bus_addr(0),
+                      offset_conf(0),
+                      fenable(0)
+                {
+
+                }
+
                 uint16_t vendor_id;
                 uint16_t device_id;
                 uint32_t pci_base;
-                uint8_t  offset_bus; // base_addr + bus addr offset
+                uint8_t  offset_bus;
                 uint16_t mask_bus_addr;
                 uint8_t  offset_conf;
                 uint8_t  fenable;
@@ -341,7 +352,7 @@ namespace embc {
             };
 
             std::map<uint16_t, device_i> devices_spr = {
-                { VIA_VT8237_BUS_CTRL_DEVICE_ID, device_i(
+                { VIA_VT8237_BUS_CTRL_DEVICE_ID,        device_i(
                                                             VIA_VT8237_BUS_CTRL_VENDOR_ID,
                                                             0,
                                                             VIA_VT8237_BUS_CTRL_DEVICE_ID,
@@ -349,9 +360,9 @@ namespace embc {
                                                             0xff00,
                                                             VT8237_SMBUS_HOST_CONFIGURE,
                                                             VT8237_SMBUS_HOST_CONTROLER_ENABLE
-                                                         )},
+                                                        )},
 
-                { VIA_CX700M_BUS_CTRL_DEVICE_ID, device_i(
+                { VIA_CX700M_BUS_CTRL_DEVICE_ID,        device_i(
                                                             VIA_CX700M_BUS_CTRL_VENDOR_ID,
                                                             0,
                                                             VIA_CX700M_BUS_CTRL_DEVICE_ID,
@@ -359,9 +370,9 @@ namespace embc {
                                                             0xff00,
                                                             CX700M_SMBUS_HOST_CONFIGURE,
                                                             CX700M_SMBUS_HOST_CONTROLER_ENABLE
-                                                         )},
+                                                        )},
 
-                { VIA_VX900_BUS_CTRL_DEVICE_ID, device_i(
+                { VIA_VX900_BUS_CTRL_DEVICE_ID,         device_i(
                                                             VIA_VX900_BUS_CTRL_VENDOR_ID,
                                                             0,
                                                             VIA_VX900_BUS_CTRL_DEVICE_ID,
@@ -371,7 +382,7 @@ namespace embc {
                                                             VX900_SMBUS_HOST_CONTROLER_ENABLE
                                                         )},
 
-                { INTEL_ICH4_SMBUS_DEVICE_ID, device_i(
+                { INTEL_ICH4_SMBUS_DEVICE_ID,           device_i(
                                                             INTEL_ICH4_SMBUS_VENDOR_ID,
                                                             0,
                                                             INTEL_ICH4_SMBUS_DEVICE_ID,
@@ -379,9 +390,9 @@ namespace embc {
                                                             0xff00,
                                                             ICH4_SMBUS_HOST_CONFIGURE,
                                                             ICH4_SMBUS_HOST_HST_EN
-                                                         )},
+                                                        )},
 
-                { INTEL_ICH8_SMBUS_DEVICE_ID, device_i(
+                { INTEL_ICH8_SMBUS_DEVICE_ID,           device_i(
                                                             INTEL_ICH8_SMBUS_VENDOR_ID,
                                                             0,
                                                             INTEL_ICH8_SMBUS_DEVICE_ID,
@@ -389,9 +400,9 @@ namespace embc {
                                                             0xff00,
                                                             ICH8_SMBUS_HOST_CONFIGURE,
                                                             ICH8_SMBUS_HOST_HST_EN
-                                                         )},
+                                                        )},
 
-                { INTEL_ICH10_SMBUS_DEVICE_ID, device_i(
+                { INTEL_ICH10_SMBUS_DEVICE_ID,          device_i(
                                                             INTEL_ICH10_SMBUS_VENDOR_ID,
                                                             0,
                                                             INTEL_ICH10_SMBUS_DEVICE_ID,
@@ -399,9 +410,9 @@ namespace embc {
                                                             0xff00,
                                                             ICH10_SMBUS_HOST_CONFIGURE,
                                                             ICH10_SMBUS_HOST_HST_EN
-                                                         )},
+                                                        )},
 
-                { INTEL_NM10_SMBUS_DEVICE_ID, device_i(
+                { INTEL_NM10_SMBUS_DEVICE_ID,           device_i(
                                                             INTEL_NM10_SMBUS_VENDOR_ID,
                                                             0,
                                                             INTEL_NM10_SMBUS_DEVICE_ID,
@@ -409,9 +420,9 @@ namespace embc {
                                                             0xff00,
                                                             NM10_SMBUS_HOST_CONFIGURE,
                                                             NM10_SMBUS_HOST_HST_EN
-                                                         )},
+                                                        )},
 
-                { INTEL_QM67_SMBUS_DEVICE_ID, device_i(
+                { INTEL_QM67_SMBUS_DEVICE_ID,           device_i(
                                                             INTEL_QM67_SMBUS_VENDOR_ID,
                                                             0,
                                                             INTEL_QM67_SMBUS_DEVICE_ID,
@@ -419,9 +430,9 @@ namespace embc {
                                                             0xfff0,
                                                             QM67_SMBUS_HOST_CONFIGURE,
                                                             QM67_SMBUS_HOST_HST_EN
-                                                         )},
+                                                        )},
 
-                { INTEL_QM77_SMBUS_DEVICE_ID, device_i(
+                { INTEL_QM77_SMBUS_DEVICE_ID,           device_i(
                                                             INTEL_QM77_SMBUS_VENDOR_ID,
                                                             0,
                                                             INTEL_QM77_SMBUS_DEVICE_ID,
@@ -429,9 +440,9 @@ namespace embc {
                                                             0xfff0,
                                                             QM77_SMBUS_HOST_CONFIGURE,
                                                             QM77_SMBUS_HOST_HST_EN
-                                                         )},
+                                                        )},
 
-                { INTEL_HM65_SMBUS_DEVICE_ID, device_i(
+                { INTEL_HM65_SMBUS_DEVICE_ID,           device_i(
                                                             INTEL_HM65_SMBUS_VENDOR_ID,
                                                             0,
                                                             INTEL_HM65_SMBUS_DEVICE_ID,
@@ -439,9 +450,9 @@ namespace embc {
                                                             0xfff0,
                                                             HM65_SMBUS_HOST_CONFIGURE,
                                                             HM65_SMBUS_HOST_HST_EN
-                                                         )},
+                                                        )},
 
-                { INTEL_HM76_SMBUS_DEVICE_ID, device_i(
+                { INTEL_HM76_SMBUS_DEVICE_ID,           device_i(
                                                             INTEL_HM76_SMBUS_VENDOR_ID,
                                                             0,
                                                             INTEL_HM76_SMBUS_DEVICE_ID,
@@ -451,7 +462,7 @@ namespace embc {
                                                             HM76_SMBUS_HOST_HST_EN
                                                          )},
 
-                { INTEL_SOC_SMBUS_DEVICE_ID, device_i(
+                { INTEL_SOC_SMBUS_DEVICE_ID,            device_i(
                                                             INTEL_SOC_SMBUS_VENDOR_ID,
                                                             0,
                                                             INTEL_SOC_SMBUS_DEVICE_ID,
@@ -469,9 +480,9 @@ namespace embc {
                                                             0xfff0,
                                                             Apollo_Lake_SOC_SMBUS_HOST_CONFIGURE,
                                                             Apollo_Lake_SOC_SMBUS_HOST_HST_EN
-                                                         )},
+                                                        )},
 
-                { INTEL_Sky_Lake_SOC_SMBUS_DEVICE_ID, device_i(
+                { INTEL_Sky_Lake_SOC_SMBUS_DEVICE_ID,   device_i(
                                                             INTEL_Sky_Lake_SOC_SMBUS_VENDOR_ID,
                                                             0,
                                                             INTEL_Sky_Lake_SOC_SMBUS_DEVICE_ID,
@@ -479,7 +490,7 @@ namespace embc {
                                                             0xfff0,
                                                             Sky_Lake_SOC_SMBUS_HOST_CONFIGURE,
                                                             Sky_Lake_SOC_SMBUS_HOST_HST_EN
-                                                         )},
+                                                        )},
 
                 { INTEL_Sky_Lake_U_SOC_SMBUS_DEVICE_ID, device_i(
                                                             INTEL_Sky_Lake_U_SOC_SMBUS_VENDOR_ID,
@@ -489,7 +500,7 @@ namespace embc {
                                                             0xfff0,
                                                             Sky_Lake_U_SOC_SMBUS_HOST_CONFIGURE,
                                                             Sky_Lake_U_SOC_SMBUS_HOST_HST_EN
-                                                         )},
+                                                        )},
             };
 
 
@@ -499,16 +510,16 @@ namespace embc {
 
                 auto PCI_Read = []() -> uint32_t
                 {
-                    uint32_t dwAddrVal;
+                    uint32_t val;
 
-                    dwAddrVal=inl(PCI_CONFIG_DATA);
+                    val=inl(PCI_CONFIG_DATA);
                     usleep(10);
-                    return dwAddrVal;
+                    return val;
                 };
 
-                auto PCI_Write = [](uint32_t dwDataVal)
+                auto PCI_Write = [](uint32_t val)
                 {
-                    outl(dwDataVal,PCI_CONFIG_ADDR);
+                    outl(val, PCI_CONFIG_ADDR);
                     usleep(10);
                 };
 
@@ -523,39 +534,37 @@ namespace embc {
                             uint32_t pci_base = 0x80000000 + PCI_Bus*0x10000 + PCI_Device*0x800 + PCI_Function*0x100;
                             PCI_Write(pci_base);
 
+                            uint32_t result = PCI_Read();
+
+                            vendorID = result & 0xffff;
+                            deviceID = (result >> 16) & 0xffff;
+
+
+                            if(devices_spr.count(deviceID))
                             {
-                                uint32_t result = PCI_Read();
-
-                                vendorID = result & 0xffff;
-                                deviceID = (result >> 16) & 0xffff;
-
-
-                                if(devices_spr.count(deviceID))
+                                if(devices_spr[deviceID].vendor_id == vendorID)
                                 {
-                                    if(devices_spr[deviceID].vendor_id == vendorID)
-                                    {
-                                        devices_spr[deviceID].pci_base = pci_base;
-                                    }
+                                    devices_spr[deviceID].pci_base = pci_base;
                                 }
-                                else if (vendorID == INTEL_ICH4_VENDOR_ID && deviceID == INTEL_ICH4_DEVICE_ID)
+                            }
+                            else if (vendorID == INTEL_ICH4_VENDOR_ID && deviceID == INTEL_ICH4_DEVICE_ID)
+                            {
+                                int stride = 0x100;
+                                for (int i = 0; i < 8; i ++)
                                 {
-                                    int stride = 0x100;
-                                    for (int i = 0; i < 8; i ++)
+                                    int base = pci_base + i * stride;
+                                    PCI_Write(base);
                                     {
-                                        int base = pci_base + i * stride;
-                                        PCI_Write(base);
+                                        uint32_t result = PCI_Read();
+
+                                        vendorID = result & 0xffff;
+                                        deviceID = (result >> 16) & 0xffff;
+
+                                        if(devices_spr.count(deviceID))
                                         {
-                                            uint32_t result = PCI_Read();
-
-                                            vendorID = result & 0xffff;
-                                            deviceID = (result >> 16) & 0xffff;
-
-                                            if(devices_spr.count(deviceID))
+                                            if(devices_spr[deviceID].vendor_id == vendorID)
                                             {
-                                                if(devices_spr[deviceID].vendor_id == vendorID)
-                                                {
-                                                    devices_spr[deviceID].pci_base = base;
-                                                }
+                                                devices_spr[deviceID].pci_base = base;
                                             }
                                         }
                                     }
@@ -700,11 +709,14 @@ namespace embc {
 
         bool status() {
             static std::map<uint16_t, bus::device_i> devices = bus::PCI_AutoDetect();
-            if(!devices.empty())
-                return bus::status_device(devices.begin()->first);
+            bool sts = false;
+            if(!devices.empty()) {
+                sts = bus::status_device(devices.begin()->first);
+                bus::base_bus_addr = devices.begin()->second.bus_address();
+            }
 
             /* PCI not detected */
-            return false;
+            return sts;
         }
 
         uint8_t read(uint8_t target_addr) {
@@ -753,7 +765,7 @@ namespace embc {
         uint8_t read() {
             uint8_t byteGPIO1X = io::read(GPIO1X_INPUT_DATA);
             uint8_t byteGPIO3X = io::read(GPIO3X_INPUT_DATA);
-            uint8_t value = (byteGPIO3X & 0x0f) | (byteGPIO1X & 0xf0);
+            uint8_t value = (byteGPIO1X & 0xf0) | (byteGPIO3X & 0x0f);
 
             return value;
         }
@@ -806,6 +818,30 @@ namespace embc {
         bool read(const char *pin_alias) {
             return str_aliases.count(pin_alias) && read(str_aliases[pin_alias]);
         }
+
+#ifdef IOEMBC1000_QT
+        IOEMBC1000 * IOEMBC1000::instance()
+        {
+            static IOEMBC1000 * i = new IOEMBC1000();
+            return i;
+        }
+
+        void IOEMBC1000::timerEvent(QTimerEvent *)
+        {
+            static uint8_t prev = read();
+
+            uint8_t r = read();
+            uint8_t changes = r ^ prev;
+            if(changes) {
+                for(int i = 0; i < 8; i++)
+                {
+                    uint8_t mask = (1 << i);
+                    Q_EMIT pinChanged((pin_t)(changes & mask), r & mask);
+                }
+                prev = r;
+            }
+        }
+#endif
     }
 
     void wdt_off() {
