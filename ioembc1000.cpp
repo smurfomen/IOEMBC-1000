@@ -4,8 +4,75 @@
 #include <list>
 #include <string>
 #include <stdio.h>
-#include <unistd.h>
-#include <sys/io.h>
+
+
+#ifdef Q_OS_WIN
+#include <windows.h>
+typedef void	(__stdcall *lpOut32)(short, short);		// тип указатель на функцию вывода
+typedef short	(__stdcall *lpInp32)(short);			// тип указатель на функцию ввода
+typedef BOOL	(__stdcall *lpIsInpOutDriverOpen)(void);        // тип указатель на функцию готовности драйвера
+typedef BOOL	(__stdcall *lpIsXP64Bit)(void);			// тип указатель на функцию проверки разрядности
+
+static lpOut32 gfpOut32                             = NULL;	// указатель на функцию вывода
+static lpInp32 gfpInp32                             = NULL;	// указатель на функцию ввода
+static lpIsInpOutDriverOpen gfpIsInpOutDriverOpen   = NULL;	// указатель на функцию готовности драйвера
+static lpIsXP64Bit gfpIsXP64Bit                     = NULL;	// указатель на функцию проверки разрядности
+
+int IsDriverReady()
+{
+    return (gfpIsInpOutDriverOpen) ? gfpIsInpOutDriverOpen() : FALSE;
+}
+
+int iopl(int)
+{
+    static int success = -1;
+    if(success >= 0)
+        return success;
+
+    HINSTANCE hDLL = LoadLibrary(
+                     #ifdef Q_OS_WIN64
+                         "inpoutx64.dll"
+                     #else
+                         "inpout32.dll"
+                     #endif
+                         );
+
+    if(hDll) {
+        gfpOut32                = (lpOut32)                 GetProcAddress(hDLL, "Out32");
+        gfpInp32                = (lpInp32)                 GetProcAddress(hDLL, "Inp32");
+        gfpIsInpOutDriverOpen   = (lpIsInpOutDriverOpen)    GetProcAddress(hDLL, "IsInpOutDriverOpen");
+        gfpIsXP64Bit            = (lpIsXP64Bit)             GetProcAddress(hDLL, "IsXP64Bit");
+
+        if(IsDriverReady())
+            success = 0;
+    }
+
+    return success;
+}
+
+int inb(uint16_t port)
+{
+    short ret = 0;
+    if (IsDriverReady())
+    {
+        ret = gfpInp32(port);
+    }
+    return ret;
+}
+
+void outb(uint16_t value, uint16_t port)
+{
+    if (IsDriverReady())
+    {
+        gfpOut32(port, value);
+    }
+}
+#else
+    #include <sys/io.h>
+    #include <unistd.h>
+#endif
+
+
 
 namespace embc {
     namespace io {
@@ -275,7 +342,7 @@ namespace embc {
 #define		VX900_SMBUS_HOST_CONFIGURE			0xD2
 #define		VX900_SMBUS_HOST_CONTROLER_ENABLE		0x01
 
-            auto PCI_read = []() -> uint32_t
+            auto PCI_read() -> uint32_t
             {
                 uint32_t dwAddrVal;
 
@@ -284,7 +351,7 @@ namespace embc {
                 return dwAddrVal;
             };
 
-            auto PCI_write = [](uint32_t dwDataVal)
+            auto PCI_write(uint32_t dwDataVal) -> void
             {
                 outl(dwDataVal,PCI_CONFIG_ADDR);
                 usleep(10);
@@ -504,24 +571,9 @@ namespace embc {
             };
 
 
-            std::map<uint16_t, device_i> PCI_AutoDetect()
+            std::list<device_i> PCI_AutoDetect()
             {
-                std::map<uint16_t, device_i> detected_devices;
-
-                auto PCI_Read = []() -> uint32_t
-                {
-                    uint32_t val;
-
-                    val=inl(PCI_CONFIG_DATA);
-                    usleep(10);
-                    return val;
-                };
-
-                auto PCI_Write = [](uint32_t val)
-                {
-                    outl(val, PCI_CONFIG_ADDR);
-                    usleep(10);
-                };
+                std::list<device_i> detected_devices;
 
                 uint16_t vendorID = 0;
                 uint16_t deviceID = 0;
@@ -532,9 +584,9 @@ namespace embc {
                         for(int PCI_Function = 0; PCI_Function < 8 ; PCI_Function++ )
                         {
                             uint32_t pci_base = 0x80000000 + PCI_Bus*0x10000 + PCI_Device*0x800 + PCI_Function*0x100;
-                            PCI_Write(pci_base);
+                            PCI_write(pci_base);
 
-                            uint32_t result = PCI_Read();
+                            uint32_t result = PCI_read();
 
                             vendorID = result & 0xffff;
                             deviceID = (result >> 16) & 0xffff;
@@ -553,9 +605,9 @@ namespace embc {
                                 for (int i = 0; i < 8; i ++)
                                 {
                                     int base = pci_base + i * stride;
-                                    PCI_Write(base);
+                                    PCI_write(base);
                                     {
-                                        uint32_t result = PCI_Read();
+                                        uint32_t result = PCI_read();
 
                                         vendorID = result & 0xffff;
                                         deviceID = (result >> 16) & 0xffff;
@@ -576,12 +628,13 @@ namespace embc {
 
                 for(auto dev : devices_spr) {
                     if(dev.second.isEnabled()) {
-                        detected_devices.insert(dev);
+                        detected_devices.push_back(dev.second);
                     }
                 }
 
                 return detected_devices;
             }
+
 
             void out(uint8_t byteOffset, uint8_t byteData) {
                 outb(byteData , base_bus_addr + byteOffset);
@@ -708,15 +761,15 @@ namespace embc {
 #define	WDT_PSWIDTH_4000MS      0x03	//	When select Pulse mode:	4	 s.
 
         bool status() {
-            static std::map<uint16_t, bus::device_i> devices = bus::PCI_AutoDetect();
-            bool sts = false;
+            static std::list<bus::device_i> devices = bus::PCI_AutoDetect();
+            bool initialized = false;
             if(!devices.empty()) {
-                sts = bus::status_device(devices.begin()->first);
-                bus::base_bus_addr = devices.begin()->second.bus_address();
+                bus::base_bus_addr = devices.front().bus_address();
+                initialized = bus::status_device(F75111_INTERNAL_ADDR);
             }
 
             /* PCI not detected */
-            return sts;
+            return initialized;
         }
 
         uint8_t read(uint8_t target_addr) {
@@ -759,9 +812,6 @@ namespace embc {
 
 namespace embc {
     namespace gpio {
-        std::map<int, pin_t> num_aliases;
-        std::map<std::string, pin_t> str_aliases;
-
         uint8_t read() {
             uint8_t byteGPIO1X = io::read(GPIO1X_INPUT_DATA);
             uint8_t byteGPIO3X = io::read(GPIO3X_INPUT_DATA);
@@ -774,15 +824,7 @@ namespace embc {
             return io::write(GPIO2X_OUTPUT_DATA, value);
         }
 
-        bool write(bool on, int pin_alias) {
-            return num_aliases.count(pin_alias) && write(on, num_aliases[pin_alias]);
-        }
-
-        bool write(bool on, const char *pin_alias) {
-            return str_aliases.count(pin_alias) && write(on, str_aliases[pin_alias]);
-        }
-
-        bool write(bool on, pin_t pin) {
+        bool write(bool on, opin_t pin) {
             static uint8_t prev = 0;
             uint8_t val = prev;
             if(((uint8_t)(val ^ pin)) == 0)
@@ -797,36 +839,22 @@ namespace embc {
             return ok;
         }
 
-        bool read(pin_t pin) {
+        bool read(ipin_t pin) {
             return read() & pin;
         }
 
-        void set_alias(pin_t pin, const char * alias)
-        {
-            str_aliases.insert({std::string(alias), pin});
-        }
-
-        void set_alias(pin_t pin, int alias)
-        {
-            num_aliases.insert({alias, pin});
-        }
-
-        bool read(int pin_alias) {
-            return num_aliases.count(pin_alias) && read(num_aliases[pin_alias]);
-        }
-
-        bool read(const char *pin_alias) {
-            return str_aliases.count(pin_alias) && read(str_aliases[pin_alias]);
-        }
-
 #ifdef IOEMBC1000_QT
-        IOEMBC1000 * IOEMBC1000::instance()
+        GpiWatcher * GpiWatcher::instance()
         {
-            static IOEMBC1000 * i = new IOEMBC1000();
+            static GpiWatcher * i = new GpiWatcher();
             return i;
         }
 
-        void IOEMBC1000::timerEvent(QTimerEvent *)
+        GpiWatcher::GpiWatcher() {
+            startTimer(10);
+        }
+
+        void GpiWatcher::timerEvent(QTimerEvent *)
         {
             static uint8_t prev = read();
 
@@ -836,7 +864,7 @@ namespace embc {
                 for(int i = 0; i < 8; i++)
                 {
                     uint8_t mask = (1 << i);
-                    Q_EMIT pinChanged((pin_t)(changes & mask), r & mask);
+                    Q_EMIT pinChanged((ipin_t)(changes & mask), r & mask);
                 }
                 prev = r;
             }
@@ -848,20 +876,22 @@ namespace embc {
         io::write(WDT_CONFIGURATION, 0);
     }
 
-    void wdt_on(uint8_t byteTimer) {
-        io::write(WDT_TIMER_RANGE, byteTimer);
+    void wdt_on(uint8_t timer) {
+        io::write(WDT_TIMER_RANGE, timer);
         io::write(WDT_CONFIGURATION, WDT_TIMEOUT_FLAG | WDT_ENABLE | WDT_PULSE | WDT_PSWIDTH_100MS);
     }
 
     bool init() {
-        if(io::status()) {
-            io::write(GPIO1X_CONTROL_MODE   , 0x00);
-            io::write(GPIO3X_CONTROL_MODE   , 0x00);
-            io::write(GPIO2X_CONTROL_MODE   , 0xff);
-            io::write(GPIO2X_OUTPUT_DRIVING , 0xff);
-            io::write(F75111_CONFIGURATION  , 0x07);
-            io::write(0x06                  , 0x04);
-            return true;
+        if(iopl(3) != -1) {
+            if(io::status()) {
+                io::write(GPIO1X_CONTROL_MODE   , 0x00);
+                io::write(GPIO3X_CONTROL_MODE   , 0x00);
+                io::write(GPIO2X_CONTROL_MODE   , 0xff);
+                io::write(GPIO2X_OUTPUT_DRIVING , 0xff);
+                io::write(F75111_CONFIGURATION  , 0x07);
+                io::write(0x06                  , 0x04);
+                return true;
+            }
         }
 
         return false;

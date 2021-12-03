@@ -4,17 +4,31 @@
 
 #ifdef IOEMBC1000_QT
 #include <QObject>
+#include <QTimerEvent>
 #endif
 
 namespace embc {
+
+    /*! \brief  Initialization of I/O, SMBus and GPIO pins. */
+    bool init();
+
+    /*! \brief  Turn on WDT with timer settings. */
+    void wdt_on(uint8_t timer);
+
+    /*! \brief  Turn off WDT. */
+    void wdt_off();
+
     namespace io {
+        /*! \brief  Returns value by address target_addr on smbus. */
         uint8_t read(uint8_t target_addr);
+
+        /*! \brief  Writes value v to address target_addr on smbus. Returns true if write was be success, otherwise returns false. */
         bool write(uint8_t target_addr, uint8_t v);
     }
 
     namespace gpio {
-
-        enum pin_t {
+        /*! \brief  Input pins. */
+        enum ipin_t {
             GPI0 = (1 << 4),
             GPI1 = (1 << 7),
             GPI2 = (1 << 6),
@@ -22,8 +36,11 @@ namespace embc {
             GPI4 = (1 << 1),
             GPI5 = (1 << 2),
             GPI6 = (1 << 3),
-            GPI7 = (1 << 5),
+            GPI7 = (1 << 5)
+        };
 
+        /*! \brief  Output pins. */
+        enum opin_t {
             GPO0 = (1 << 0),
             GPO1 = (1 << 1),
             GPO2 = (1 << 2),
@@ -35,39 +52,31 @@ namespace embc {
         };
 
 #ifdef IOEMBC1000_QT
-        class IOEMBC1000 : public QObject {
+        /* QObject-based class for notify messages about changes statement of input (GPI) pins */
+        class GpiWatcher : public QObject {
             Q_OBJECT
         public:
-            static IOEMBC1000 * instance();
+            /*! \brief  Returns static instance of class IOEMBC1000. */
+            static GpiWatcher * instance();
 
         Q_SIGNALS:
-            void pinChanged(pin_t pin, bool on);
+            /*!
+             * \brief   Will be emitted when statement of any pin was changed.
+             * \arg     pin - pin which was changed
+             *          on  - current statement of pin
+             */
+            void pinChanged(ipin_t pin, bool on);
 
         private:
-            IOEMBC1000() {
-                startTimer(10);
-            }
+            GpiWatcher();
             virtual void timerEvent(QTimerEvent *) override;
         };
 #endif
+        /*! \brief  Writes value on to output GPO (opin_t) pin. */
+        bool write(bool on, opin_t pin);
 
-
-
-
-        void set_alias(pin_t pin, int alias);
-        void set_alias(pin_t pin, const char * alias);
-
-        bool write(bool on, int pin_alias);
-        bool write(bool on, const char * pin_alias);
-        bool write(bool on, pin_t pin);
-
-        bool read(int pin_alias);
-        bool read(const char * pin_alias);
-        bool read(pin_t pin);
+        /*! \brief  Returns current value on GPI (ipin_t) pin. */
+        bool read(ipin_t pin);
     }
-
-    bool init();
-    void wdt_on();
-    void wdt_off();
 }
 #endif // IOEMBC1000_H
