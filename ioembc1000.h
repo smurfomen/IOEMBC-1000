@@ -18,14 +18,6 @@ namespace embc {
     /*! \brief  Turn off WDT. */
     void wdt_off();
 
-    namespace io {
-        /*! \brief  Returns value by address target_addr on smbus. */
-        uint8_t read(uint8_t target_addr);
-
-        /*! \brief  Writes value v to address target_addr on smbus. Returns true if write was be success, otherwise returns false. */
-        bool write(uint8_t target_addr, uint8_t v);
-    }
-
     namespace gpio {
         /*! \brief  Input pins. */
         enum ipin_t {
