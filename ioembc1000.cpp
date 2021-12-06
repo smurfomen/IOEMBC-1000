@@ -824,7 +824,7 @@ namespace embc {
             return io::write(GPIO2X_OUTPUT_DATA, value);
         }
 
-        bool write(bool on, opin_t pin) {
+        bool write(opin_t pin, bool on) {
             static uint8_t prev = 0;
             uint8_t val = prev;
             if(((uint8_t)(val ^ pin)) == 0)

@@ -73,7 +73,7 @@ namespace embc {
         };
 #endif
         /*! \brief  Writes value on to output GPO (opin_t) pin. */
-        bool write(bool on, opin_t pin);
+        bool write(opin_t pin, bool on);
 
         /*! \brief  Returns current value on GPI (ipin_t) pin. */
         bool read(ipin_t pin);
