@@ -13,9 +13,14 @@
 using call_outw = void(__stdcall *)(short, short);   // тип указатель на функцию вывода
 using call_inpw = short(__stdcall *)(short);			// тип указатель на функцию ввода
 using call_condition = int(__stdcall *)(void);    // тип указатель на функцию, возвращающую состояние
+using call_inpl = unsigned int (__stdcall *)(unsigned int);
+using call_outl = void (__stdcall *)(unsigned int port, unsigned int value);
 
 static call_outw Out32                        = 0;	// указатель на функцию вывода
 static call_inpw Inp32                        = 0;	// указатель на функцию ввода
+static call_outl Outl32                        = 0;	// указатель на функцию вывода
+static call_inpl Inpl32                        = 0;	// указатель на функцию ввода
+
 static call_condition IsInpOutDriverOpen   = 0;	// указатель на функцию готовности драйвера
 static call_condition IsXP64Bit            = 0;	// указатель на функцию проверки разрядности
 
@@ -39,10 +44,14 @@ int iopl(int)
                          );
 
     if(hDLL) {
-        Out32                = (call_outw)      GetProcAddress(hDLL, "Out32");
-        Inp32                = (call_inpw)      GetProcAddress(hDLL, "Inp32");
+        Out32               = (call_outw)      GetProcAddress(hDLL, "Out32");
+        Inp32               = (call_inpw)      GetProcAddress(hDLL, "Inp32");
+        Inpl32              = (call_inpl)      GetProcAddress(hDLL, "DlPortReadPortUlong");
+        Outl32              = (call_outl)      GetProcAddress(hDLL, "DlPortWritePortUlong");
+
         IsInpOutDriverOpen   = (call_condition) GetProcAddress(hDLL, "IsInpOutDriverOpen");
         IsXP64Bit            = (call_condition) GetProcAddress(hDLL, "IsXP64Bit");
+
 
         if(IsDriverReady())
             success = 0;
@@ -58,7 +67,7 @@ void usleep(int ms){
 uint8_t inb(uint16_t port)
 {
     uint8_t ret = 0;
-    if (IsDriverReady())
+    if (Inp32 != NULL && IsDriverReady())
     {
         ret = Inp32(port) & 0xff;
     }
@@ -67,23 +76,36 @@ uint8_t inb(uint16_t port)
 
 void outb(uint8_t value, uint16_t port)
 {
-    if (IsDriverReady())
+    if (Out32 != NULL && IsDriverReady())
     {
         Out32(port, value);
     }
 }
 
-uint32_t inl(uint16_t port) {
+uint32_t inl(uint32_t port) {
     uint32_t ret = 0;
-    for(size_t i = 0; i < sizeof (ret); i++) {
-         ret |= inb(port + i) << (i * 8);
+    if(Inpl32 != NULL && IsDriverReady()) {
+        ret = Inpl32(port);
     }
+    else
+    {
+        for(size_t i = 0; i < sizeof (ret); i++) {
+             ret |= inb(port + i) << (i * 8);
+        }
+    }
+
     return ret;
 }
 
-void outl(uint32_t value, uint16_t port) {
-    for(size_t i = 0; i < sizeof (value); i++) {
-         outb((value >> (i*8)) & 0xff, port + i);
+void outl(uint32_t value, uint32_t port) {
+    if(Outl32 != NULL && IsDriverReady()) {
+        Outl32(port, value);
+    }
+    else
+    {
+        for(size_t i = 0; i < sizeof (value); i++) {
+             outb((value >> (i*8)) & 0xff, port + i);
+        }
     }
 }
 
@@ -413,45 +435,81 @@ namespace embc {
             usleep(10);
         };
 
+        /* { device ID, { config offset, bit 'is enabled'} } */
+        std::map <uint16_t, std::pair<uint8_t, uint8_t>> configs = {
+            { VIA_VT8237_BUS_CTRL_DEVICE_ID,        { VT8237_SMBUS_HOST_CONFIGURE,          VT8237_SMBUS_HOST_CONTROLER_ENABLE      } },
+            { VIA_CX700M_BUS_CTRL_DEVICE_ID,        { CX700M_SMBUS_HOST_CONFIGURE,          CX700M_SMBUS_HOST_CONTROLER_ENABLE      } },
+            { VIA_VX900_BUS_CTRL_DEVICE_ID,         { VX900_SMBUS_HOST_CONFIGURE,           VX900_SMBUS_HOST_CONTROLER_ENABLE       } },
+            { INTEL_ICH4_SMBUS_DEVICE_ID,           { ICH4_SMBUS_HOST_CONFIGURE,            ICH4_SMBUS_HOST_HST_EN                  } },
+            { INTEL_ICH8_SMBUS_DEVICE_ID,           { ICH8_SMBUS_HOST_CONFIGURE,            ICH8_SMBUS_HOST_HST_EN                  } },
+            { INTEL_ICH10_SMBUS_DEVICE_ID,          { ICH10_SMBUS_HOST_CONFIGURE,           ICH10_SMBUS_HOST_HST_EN                 } },
+            { INTEL_NM10_SMBUS_DEVICE_ID,           { NM10_SMBUS_HOST_CONFIGURE,            NM10_SMBUS_HOST_HST_EN                  } },
+            { INTEL_QM67_SMBUS_DEVICE_ID,           { QM67_SMBUS_HOST_CONFIGURE,            QM67_SMBUS_HOST_HST_EN                  } },
+            { INTEL_QM77_SMBUS_DEVICE_ID,           { QM77_SMBUS_HOST_CONFIGURE,            QM77_SMBUS_HOST_HST_EN                  } },
+            { INTEL_HM65_SMBUS_DEVICE_ID,           { HM65_SMBUS_HOST_CONFIGURE,            HM65_SMBUS_HOST_HST_EN                  } },
+            { INTEL_HM76_SMBUS_DEVICE_ID,           { HM76_SMBUS_HOST_CONFIGURE,            HM76_SMBUS_HOST_HST_EN                  } },
+            { INTEL_SOC_SMBUS_DEVICE_ID,            { SOC_SMBUS_HOST_CONFIGURE,             SOC_SMBUS_HOST_HST_EN                   } },
+            { INTEL_Apollo_Lake_SOC_SMBUS_DEVICE_ID,{ Apollo_Lake_SOC_SMBUS_HOST_CONFIGURE, Apollo_Lake_SOC_SMBUS_HOST_HST_EN       } },
+            { INTEL_Sky_Lake_SOC_SMBUS_DEVICE_ID,   { Sky_Lake_SOC_SMBUS_HOST_CONFIGURE,    Sky_Lake_SOC_SMBUS_HOST_HST_EN          } },
+            { INTEL_Sky_Lake_U_SOC_SMBUS_DEVICE_ID, { Sky_Lake_U_SOC_SMBUS_HOST_CONFIGURE,  Sky_Lake_U_SOC_SMBUS_HOST_HST_EN        } }
+        };
+
+        /* { device ID, vendor ID } */
+        std::map <uint16_t, uint16_t> vendors = {
+            { VIA_VT8237_BUS_CTRL_DEVICE_ID,            VIA_VT8237_BUS_CTRL_VENDOR_ID           },
+            { VIA_CX700M_BUS_CTRL_DEVICE_ID,            VIA_CX700M_BUS_CTRL_VENDOR_ID           },
+            { VIA_VX900_BUS_CTRL_DEVICE_ID,             VIA_VX900_BUS_CTRL_VENDOR_ID            },
+            { INTEL_ICH4_SMBUS_DEVICE_ID,               INTEL_ICH4_SMBUS_VENDOR_ID              },
+            { INTEL_ICH8_SMBUS_DEVICE_ID,               INTEL_ICH8_SMBUS_VENDOR_ID              },
+            { INTEL_ICH10_SMBUS_DEVICE_ID,              INTEL_ICH10_SMBUS_VENDOR_ID             },
+            { INTEL_NM10_SMBUS_DEVICE_ID,               INTEL_NM10_SMBUS_VENDOR_ID              },
+            { INTEL_QM67_SMBUS_DEVICE_ID,               INTEL_QM67_SMBUS_VENDOR_ID              },
+            { INTEL_QM77_SMBUS_DEVICE_ID,               INTEL_QM77_SMBUS_VENDOR_ID              },
+            { INTEL_HM65_SMBUS_DEVICE_ID,               INTEL_HM65_SMBUS_VENDOR_ID              },
+            { INTEL_HM76_SMBUS_DEVICE_ID,               INTEL_HM76_SMBUS_VENDOR_ID              },
+            { INTEL_SOC_SMBUS_DEVICE_ID,                INTEL_SOC_SMBUS_VENDOR_ID               },
+            { INTEL_Apollo_Lake_SOC_SMBUS_DEVICE_ID,    INTEL_Apollo_Lake_SOC_SMBUS_VENDOR_ID   },
+            { INTEL_Sky_Lake_SOC_SMBUS_DEVICE_ID,       INTEL_Sky_Lake_SOC_SMBUS_VENDOR_ID      },
+            { INTEL_Sky_Lake_U_SOC_SMBUS_DEVICE_ID,     INTEL_Sky_Lake_U_SOC_SMBUS_VENDOR_ID    }
+        };
+
+        /* { device ID , { host smbus offset, mask }}  */
+        std::map <uint16_t, std::pair<uint8_t, uint16_t>> bus_host_offset = {
+            { VIA_VT8237_BUS_CTRL_DEVICE_ID,            { VT8237_SMBUS_HOST_IOBASE          , 0xff00} },
+            { VIA_CX700M_BUS_CTRL_DEVICE_ID,            { CX700M_SMBUS_HOST_IOBASE          , 0xff00} },
+            { VIA_VX900_BUS_CTRL_DEVICE_ID,             { VX900_SMBUS_HOST_IOBASE           , 0xff00} },
+            { INTEL_ICH4_SMBUS_DEVICE_ID,               { ICH4_SMBUS_HOST_IOBASE            , 0xff00} },
+            { INTEL_ICH8_SMBUS_DEVICE_ID,               { ICH8_SMBUS_HOST_IOBASE            , 0xff00} },
+            { INTEL_ICH10_SMBUS_DEVICE_ID,              { ICH10_SMBUS_HOST_IOBASE           , 0xff00} },
+            { INTEL_NM10_SMBUS_DEVICE_ID,               { NM10_SMBUS_HOST_IOBASE            , 0xff00} },
+            { INTEL_QM67_SMBUS_DEVICE_ID,               { QM67_SMBUS_HOST_IOBASE            , 0xfff0} },
+            { INTEL_QM77_SMBUS_DEVICE_ID,               { QM77_SMBUS_HOST_IOBASE            , 0xfff0} },
+            { INTEL_HM65_SMBUS_DEVICE_ID,               { HM65_SMBUS_HOST_IOBASE            , 0xfff0} },
+            { INTEL_HM76_SMBUS_DEVICE_ID,               { HM76_SMBUS_HOST_IOBASE            , 0xfff0} },
+            { INTEL_SOC_SMBUS_DEVICE_ID,                { SOC_SMBUS_HOST_IOBASE             , 0xfff0} },
+            { INTEL_Apollo_Lake_SOC_SMBUS_DEVICE_ID,    { Apollo_Lake_SOC_SMBUS_HOST_IOBASE , 0xfff0} },
+            { INTEL_Sky_Lake_SOC_SMBUS_DEVICE_ID,       { Sky_Lake_SOC_SMBUS_HOST_IOBASE    , 0xfff0} },
+            { INTEL_Sky_Lake_U_SOC_SMBUS_DEVICE_ID,     { Sky_Lake_U_SOC_SMBUS_HOST_IOBASE  , 0xfff0} }
+        };
+
+
         struct device_i {
 
         private:
-            uint16_t vendor_id;
             uint16_t device_id;
-
             uint32_t pci_base;
-            uint8_t  offset_bus;
-            uint16_t mask_bus_addr;
-            uint16_t bus_addr = 0;
-
-            uint8_t  offset_conf;
-            uint8_t  fconf_enable;
-
+            uint16_t bus_addr;
         public:
 
-            device_i(uint16_t v_id, uint16_t d_id, uint8_t offset_bus, uint16_t mask_bus_addr, uint8_t offset_conf, uint8_t fconf_enable, uint32_t pci_base = 0)
-                : vendor_id(v_id),
-                  device_id(d_id),
+            device_i(uint16_t device_id, uint32_t pci_base)
+                : device_id(device_id),
                   pci_base(pci_base),
-                  offset_bus(offset_bus),
-                  mask_bus_addr(mask_bus_addr),
-                  bus_addr(0),
-                  offset_conf(offset_conf),
-                  fconf_enable(fconf_enable)
+                  bus_addr(0)
             {
-
-            }
-
-            device_i()
-                : vendor_id(0),
-                  device_id(0),
-                  pci_base(0),
-                  offset_bus(0),
-                  mask_bus_addr(0),
-                  offset_conf(0),
-                  fconf_enable(0)
-            {
-
+                PCI_write(pci_base + bus_host_offset[device_id].first);
+                bus_addr = (uint16_t)PCI_read() & bus_host_offset[device_id].second;
+                if(!isEnabled())
+                    bus_addr = 0;
             }
 
             uint16_t id() const {
@@ -459,40 +517,20 @@ namespace embc {
             }
 
             uint16_t vendor() const {
-                return vendor_id;
-            }
-
-            void init_PCI(uint32_t addr) {
-                pci_base = addr;
-
-                if(pci_base) {
-                    PCI_write(pci_base + offset_bus);
-                    bus_addr = (uint16_t)PCI_read() & mask_bus_addr;
-                }
-            }
-
-            uint32_t config_address() {
-                return pci_base ? pci_base + offset_conf : 0;
+                return vendors[device_id];
             }
 
             bool isEnabled() {
-                bool enable = false;
+                if(!bus_addr)
+                    return false;
 
-                uint32_t ca = config_address();
-                if(ca)
-                {
-                    PCI_write(ca);
-                    enable = PCI_read() & fconf_enable;
-                }
-                return enable;
+                PCI_write(pci_base + configs[device_id].first);
+                return PCI_read() & configs[device_id].second;
             }
 
             void out(uint8_t byteOffset, uint8_t byteData) {
-                if(bus_addr)
-                {
-                    outb(byteData , bus_addr + byteOffset);
-                    usleep(10);
-                }
+                outb(byteData , bus_addr + byteOffset);
+                usleep(10);
             }
 
             uint8_t inp(uint8_t byteOffset) {
@@ -614,204 +652,10 @@ namespace embc {
             }
         };
 
+        device_i * active_device = nullptr;
         device_i & dev() {
-            static device_i smb;
-            return smb;
+            return * active_device;
         }
-
-        /* { device ID, { config offset, bit 'is enabled'} } */
-        std::map <uint16_t, std::pair<uint8_t, uint8_t>> configs = {
-            { VIA_VT8237_BUS_CTRL_DEVICE_ID,        { VT8237_SMBUS_HOST_CONFIGURE,          VT8237_SMBUS_HOST_CONTROLER_ENABLE      } },
-            { VIA_CX700M_BUS_CTRL_DEVICE_ID,        { CX700M_SMBUS_HOST_CONFIGURE,          CX700M_SMBUS_HOST_CONTROLER_ENABLE      } },
-            { VIA_VX900_BUS_CTRL_DEVICE_ID,         { VX900_SMBUS_HOST_CONFIGURE,           VX900_SMBUS_HOST_CONTROLER_ENABLE       } },
-            { INTEL_ICH4_SMBUS_DEVICE_ID,           { ICH4_SMBUS_HOST_CONFIGURE,            ICH4_SMBUS_HOST_HST_EN                  } },
-            { INTEL_ICH8_SMBUS_DEVICE_ID,           { ICH8_SMBUS_HOST_CONFIGURE,            ICH8_SMBUS_HOST_HST_EN                  } },
-            { INTEL_ICH10_SMBUS_DEVICE_ID,          { ICH10_SMBUS_HOST_CONFIGURE,           ICH10_SMBUS_HOST_HST_EN                 } },
-            { INTEL_NM10_SMBUS_DEVICE_ID,           { NM10_SMBUS_HOST_CONFIGURE,            NM10_SMBUS_HOST_HST_EN                  } },
-            { INTEL_QM67_SMBUS_DEVICE_ID,           { QM67_SMBUS_HOST_CONFIGURE,            QM67_SMBUS_HOST_HST_EN                  } },
-            { INTEL_QM77_SMBUS_DEVICE_ID,           { QM77_SMBUS_HOST_CONFIGURE,            QM77_SMBUS_HOST_HST_EN                  } },
-            { INTEL_HM65_SMBUS_DEVICE_ID,           { HM65_SMBUS_HOST_CONFIGURE,            HM65_SMBUS_HOST_HST_EN                  } },
-            { INTEL_HM76_SMBUS_DEVICE_ID,           { HM76_SMBUS_HOST_CONFIGURE,            HM76_SMBUS_HOST_HST_EN                  } },
-            { INTEL_SOC_SMBUS_DEVICE_ID,            { SOC_SMBUS_HOST_CONFIGURE,             SOC_SMBUS_HOST_HST_EN                   } },
-            { INTEL_Apollo_Lake_SOC_SMBUS_DEVICE_ID,{ Apollo_Lake_SOC_SMBUS_HOST_CONFIGURE, Apollo_Lake_SOC_SMBUS_HOST_HST_EN       } },
-            { INTEL_Sky_Lake_SOC_SMBUS_DEVICE_ID,   { Sky_Lake_SOC_SMBUS_HOST_CONFIGURE,    Sky_Lake_SOC_SMBUS_HOST_HST_EN          } },
-            { INTEL_Sky_Lake_U_SOC_SMBUS_DEVICE_ID, { Sky_Lake_U_SOC_SMBUS_HOST_CONFIGURE,  Sky_Lake_U_SOC_SMBUS_HOST_HST_EN        } }
-        };
-
-        /* { device ID, vendor ID } */
-        std::map <uint16_t, uint16_t> vendors = {
-            { VIA_VT8237_BUS_CTRL_DEVICE_ID,            VIA_VT8237_BUS_CTRL_VENDOR_ID           },
-            { VIA_CX700M_BUS_CTRL_DEVICE_ID,            VIA_CX700M_BUS_CTRL_VENDOR_ID           },
-            { VIA_VX900_BUS_CTRL_DEVICE_ID,             VIA_VX900_BUS_CTRL_VENDOR_ID            },
-            { INTEL_ICH4_SMBUS_DEVICE_ID,               INTEL_ICH4_SMBUS_VENDOR_ID              },
-            { INTEL_ICH8_SMBUS_DEVICE_ID,               INTEL_ICH8_SMBUS_VENDOR_ID              },
-            { INTEL_ICH10_SMBUS_DEVICE_ID,              INTEL_ICH10_SMBUS_VENDOR_ID             },
-            { INTEL_NM10_SMBUS_DEVICE_ID,               INTEL_NM10_SMBUS_VENDOR_ID              },
-            { INTEL_QM67_SMBUS_DEVICE_ID,               INTEL_QM67_SMBUS_VENDOR_ID              },
-            { INTEL_QM77_SMBUS_DEVICE_ID,               INTEL_QM77_SMBUS_VENDOR_ID              },
-            { INTEL_HM65_SMBUS_DEVICE_ID,               INTEL_HM65_SMBUS_VENDOR_ID              },
-            { INTEL_HM76_SMBUS_DEVICE_ID,               INTEL_HM76_SMBUS_VENDOR_ID              },
-            { INTEL_SOC_SMBUS_DEVICE_ID,                INTEL_SOC_SMBUS_VENDOR_ID               },
-            { INTEL_Apollo_Lake_SOC_SMBUS_DEVICE_ID,    INTEL_Apollo_Lake_SOC_SMBUS_VENDOR_ID   },
-            { INTEL_Sky_Lake_SOC_SMBUS_DEVICE_ID,       INTEL_Sky_Lake_SOC_SMBUS_VENDOR_ID      },
-            { INTEL_Sky_Lake_U_SOC_SMBUS_DEVICE_ID,     INTEL_Sky_Lake_U_SOC_SMBUS_VENDOR_ID    }
-        };
-
-        /* { device ID , { host smbus offset, mask }}  */
-        std::map <uint16_t, std::pair<uint8_t, uint16_t>> bus_host_offset = {
-            { VIA_VT8237_BUS_CTRL_DEVICE_ID,            { VT8237_SMBUS_HOST_IOBASE          , 0xff00} },
-            { VIA_CX700M_BUS_CTRL_DEVICE_ID,            { CX700M_SMBUS_HOST_IOBASE          , 0xff00} },
-            { VIA_VX900_BUS_CTRL_DEVICE_ID,             { VX900_SMBUS_HOST_IOBASE           , 0xff00} },
-            { INTEL_ICH4_SMBUS_DEVICE_ID,               { ICH4_SMBUS_HOST_IOBASE            , 0xff00} },
-            { INTEL_ICH8_SMBUS_DEVICE_ID,               { ICH8_SMBUS_HOST_IOBASE            , 0xff00} },
-            { INTEL_ICH10_SMBUS_DEVICE_ID,              { ICH10_SMBUS_HOST_IOBASE           , 0xff00} },
-            { INTEL_NM10_SMBUS_DEVICE_ID,               { NM10_SMBUS_HOST_IOBASE            , 0xff00} },
-            { INTEL_QM67_SMBUS_DEVICE_ID,               { QM67_SMBUS_HOST_IOBASE            , 0xfff0} },
-            { INTEL_QM77_SMBUS_DEVICE_ID,               { QM77_SMBUS_HOST_IOBASE            , 0xfff0} },
-            { INTEL_HM65_SMBUS_DEVICE_ID,               { HM65_SMBUS_HOST_IOBASE            , 0xfff0} },
-            { INTEL_HM76_SMBUS_DEVICE_ID,               { HM76_SMBUS_HOST_IOBASE            , 0xfff0} },
-            { INTEL_SOC_SMBUS_DEVICE_ID,                { SOC_SMBUS_HOST_IOBASE             , 0xfff0} },
-            { INTEL_Apollo_Lake_SOC_SMBUS_DEVICE_ID,    { Apollo_Lake_SOC_SMBUS_HOST_IOBASE , 0xfff0} },
-            { INTEL_Sky_Lake_SOC_SMBUS_DEVICE_ID,       { Sky_Lake_SOC_SMBUS_HOST_IOBASE    , 0xfff0} },
-            { INTEL_Sky_Lake_U_SOC_SMBUS_DEVICE_ID,     { Sky_Lake_U_SOC_SMBUS_HOST_IOBASE  , 0xfff0} }
-        };
-
-        std::map<uint16_t, device_i> devices_spr = {
-            { VIA_VT8237_BUS_CTRL_DEVICE_ID,        device_i(
-                                                        VIA_VT8237_BUS_CTRL_VENDOR_ID,
-                                                        VIA_VT8237_BUS_CTRL_DEVICE_ID,
-                                                        VT8237_SMBUS_HOST_IOBASE,
-                                                        0xff00,
-                                                        VT8237_SMBUS_HOST_CONFIGURE,
-                                                        VT8237_SMBUS_HOST_CONTROLER_ENABLE
-                                                    )},
-
-            { VIA_CX700M_BUS_CTRL_DEVICE_ID,        device_i(
-                                                        VIA_CX700M_BUS_CTRL_VENDOR_ID,
-                                                        VIA_CX700M_BUS_CTRL_DEVICE_ID,
-                                                        CX700M_SMBUS_HOST_IOBASE,
-                                                        0xff00,
-                                                        CX700M_SMBUS_HOST_CONFIGURE,
-                                                        CX700M_SMBUS_HOST_CONTROLER_ENABLE
-                                                    )},
-
-            { VIA_VX900_BUS_CTRL_DEVICE_ID,         device_i(
-                                                        VIA_VX900_BUS_CTRL_VENDOR_ID,
-                                                        VIA_VX900_BUS_CTRL_DEVICE_ID,
-                                                        VX900_SMBUS_HOST_IOBASE,
-                                                        0xff00,
-                                                        VX900_SMBUS_HOST_CONFIGURE,
-                                                        VX900_SMBUS_HOST_CONTROLER_ENABLE
-                                                    )},
-
-            { INTEL_ICH4_SMBUS_DEVICE_ID,           device_i(
-                                                        INTEL_ICH4_SMBUS_VENDOR_ID,
-                                                        INTEL_ICH4_SMBUS_DEVICE_ID,
-                                                        ICH4_SMBUS_HOST_IOBASE,
-                                                        0xff00,
-                                                        ICH4_SMBUS_HOST_CONFIGURE,
-                                                        ICH4_SMBUS_HOST_HST_EN
-                                                    )},
-
-            { INTEL_ICH8_SMBUS_DEVICE_ID,           device_i(
-                                                        INTEL_ICH8_SMBUS_VENDOR_ID,
-                                                        INTEL_ICH8_SMBUS_DEVICE_ID,
-                                                        ICH8_SMBUS_HOST_IOBASE,
-                                                        0xff00,
-                                                        ICH8_SMBUS_HOST_CONFIGURE,
-                                                        ICH8_SMBUS_HOST_HST_EN
-                                                    )},
-
-            { INTEL_ICH10_SMBUS_DEVICE_ID,          device_i(
-                                                        INTEL_ICH10_SMBUS_VENDOR_ID,
-                                                        INTEL_ICH10_SMBUS_DEVICE_ID,
-                                                        ICH10_SMBUS_HOST_IOBASE,
-                                                        0xff00,
-                                                        ICH10_SMBUS_HOST_CONFIGURE,
-                                                        ICH10_SMBUS_HOST_HST_EN
-                                                    )},
-
-            { INTEL_NM10_SMBUS_DEVICE_ID,           device_i(
-                                                        INTEL_NM10_SMBUS_VENDOR_ID,
-                                                        INTEL_NM10_SMBUS_DEVICE_ID,
-                                                        NM10_SMBUS_HOST_IOBASE,
-                                                        0xff00,
-                                                        NM10_SMBUS_HOST_CONFIGURE,
-                                                        NM10_SMBUS_HOST_HST_EN
-                                                    )},
-
-            { INTEL_QM67_SMBUS_DEVICE_ID,           device_i(
-                                                        INTEL_QM67_SMBUS_VENDOR_ID,
-                                                        INTEL_QM67_SMBUS_DEVICE_ID,
-                                                        QM67_SMBUS_HOST_IOBASE,
-                                                        0xfff0,
-                                                        QM67_SMBUS_HOST_CONFIGURE,
-                                                        QM67_SMBUS_HOST_HST_EN
-                                                    )},
-
-            { INTEL_QM77_SMBUS_DEVICE_ID,           device_i(
-                                                        INTEL_QM77_SMBUS_VENDOR_ID,
-                                                        INTEL_QM77_SMBUS_DEVICE_ID,
-                                                        QM77_SMBUS_HOST_IOBASE,
-                                                        0xfff0,
-                                                        QM77_SMBUS_HOST_CONFIGURE,
-                                                        QM77_SMBUS_HOST_HST_EN
-                                                    )},
-
-            { INTEL_HM65_SMBUS_DEVICE_ID,           device_i(
-                                                        INTEL_HM65_SMBUS_VENDOR_ID,
-                                                        INTEL_HM65_SMBUS_DEVICE_ID,
-                                                        HM65_SMBUS_HOST_IOBASE,
-                                                        0xfff0,
-                                                        HM65_SMBUS_HOST_CONFIGURE,
-                                                        HM65_SMBUS_HOST_HST_EN
-                                                    )},
-
-            { INTEL_HM76_SMBUS_DEVICE_ID,           device_i(
-                                                        INTEL_HM76_SMBUS_VENDOR_ID,
-                                                        INTEL_HM76_SMBUS_DEVICE_ID,
-                                                        HM76_SMBUS_HOST_IOBASE,
-                                                        0xfff0,
-                                                        HM76_SMBUS_HOST_CONFIGURE,
-                                                        HM76_SMBUS_HOST_HST_EN
-                                                     )},
-
-            { INTEL_SOC_SMBUS_DEVICE_ID,            device_i(
-                                                        INTEL_SOC_SMBUS_VENDOR_ID,
-                                                        INTEL_SOC_SMBUS_DEVICE_ID,
-                                                        SOC_SMBUS_HOST_IOBASE,
-                                                        0xfff0,
-                                                        SOC_SMBUS_HOST_CONFIGURE,
-                                                        SOC_SMBUS_HOST_HST_EN
-                                                     )},
-
-            { INTEL_Apollo_Lake_SOC_SMBUS_DEVICE_ID, device_i(
-                                                        INTEL_Apollo_Lake_SOC_SMBUS_VENDOR_ID,
-                                                        INTEL_Apollo_Lake_SOC_SMBUS_DEVICE_ID,
-                                                        Apollo_Lake_SOC_SMBUS_HOST_IOBASE,
-                                                        0xfff0,
-                                                        Apollo_Lake_SOC_SMBUS_HOST_CONFIGURE,
-                                                        Apollo_Lake_SOC_SMBUS_HOST_HST_EN
-                                                    )},
-
-            { INTEL_Sky_Lake_SOC_SMBUS_DEVICE_ID,   device_i(
-                                                        INTEL_Sky_Lake_SOC_SMBUS_VENDOR_ID,
-                                                        INTEL_Sky_Lake_SOC_SMBUS_DEVICE_ID,
-                                                        Sky_Lake_SOC_SMBUS_HOST_IOBASE,
-                                                        0xfff0,
-                                                        Sky_Lake_SOC_SMBUS_HOST_CONFIGURE,
-                                                        Sky_Lake_SOC_SMBUS_HOST_HST_EN
-                                                    )},
-
-            { INTEL_Sky_Lake_U_SOC_SMBUS_DEVICE_ID, device_i(
-                                                        INTEL_Sky_Lake_U_SOC_SMBUS_VENDOR_ID,
-                                                        INTEL_Sky_Lake_U_SOC_SMBUS_DEVICE_ID,
-                                                        Sky_Lake_U_SOC_SMBUS_HOST_IOBASE,
-                                                        0xfff0,
-                                                        Sky_Lake_U_SOC_SMBUS_HOST_CONFIGURE,
-                                                        Sky_Lake_U_SOC_SMBUS_HOST_HST_EN
-                                                    )},
-        };
 
         std::list<device_i> PCI_AutoDetect()
         {
@@ -833,12 +677,11 @@ namespace embc {
                         vendorID = result & 0xffff;
                         deviceID = (result >> 16) & 0xffff;
 
-
-                        if(devices_spr.count(deviceID))
+                        if(vendors.count(deviceID))
                         {
-                            if(devices_spr[deviceID].vendor() == vendorID)
+                            if(vendors[deviceID] == vendorID)
                             {
-                                devices_spr[deviceID].init_PCI(pci_base);
+                                detected_devices.push_back(device_i(deviceID, pci_base));
                             }
                         }
                         else if (vendorID == INTEL_ICH4_VENDOR_ID && deviceID == INTEL_ICH4_DEVICE_ID)
@@ -854,23 +697,19 @@ namespace embc {
                                     vendorID = result & 0xffff;
                                     deviceID = (result >> 16) & 0xffff;
 
-                                    if(devices_spr.count(deviceID))
+                                    if(vendors.count(deviceID))
                                     {
-                                        if(devices_spr[deviceID].vendor() == vendorID)
+                                        if(vendors[deviceID] == vendorID)
                                         {
-                                            devices_spr[deviceID].init_PCI(base);
+                                            device_i d(deviceID, base);
+                                            if(d.isEnabled())
+                                                detected_devices.push_back(d);
                                         }
                                     }
                                 }
                             }
                         }
                     }
-                }
-            }
-
-            for(auto dev : devices_spr) {
-                if(dev.second.isEnabled()) {
-                    detected_devices.push_back(dev.second);
                 }
             }
 
@@ -882,8 +721,7 @@ namespace embc {
             static std::list<bus::device_i> devices = PCI_AutoDetect();
             bool initialized = false;
             if(!initialized && !devices.empty()) {
-                auto & d = dev();
-                d = devices.front();
+                active_device = &devices.front();
                 initialized = dev().status_device(F75111_INTERNAL_ADDR);
             }
 
@@ -898,12 +736,13 @@ namespace embc {
 
 namespace embc {
     namespace gpio {
+        bool inverted = true;
         uint8_t read() {
             uint8_t byteGPIO1X = bus::dev().read(GPIO1X_INPUT_DATA);
             uint8_t byteGPIO3X = bus::dev().read(GPIO3X_INPUT_DATA);
             uint8_t value = (byteGPIO1X & 0xf0) | (byteGPIO3X & 0x0f);
 
-            return value;
+            return inverted ? ~value : value;
         }
 
         bool write(uint8_t value) {
@@ -911,12 +750,17 @@ namespace embc {
         }
 
         bool write(opin_t pin, bool on) {
-            static uint8_t prev = 0;
+            static uint8_t prev = inverted ? ~0 : 0;
             uint8_t val = prev;
-            if(((uint8_t)(val ^ pin)) == 0)
-                return true;
 
-            (on ? val |= pin : val &= ~pin);
+            if(on)
+            {
+                (inverted ? val &= ~pin : val |= pin);
+            }
+            else
+            {
+                (inverted ? val |= pin : val &= ~pin);
+            }
 
             bool ok = write(val);
             if(ok)
@@ -942,9 +786,10 @@ namespace embc {
 
         void GpiWatcher::timerEvent(QTimerEvent *)
         {
-            static uint8_t prev = read();
+            static uint8_t prev = ~read();
 
             uint8_t r = read();
+
             uint8_t changes = r ^ prev;
             if(changes) {
                 for(int i = 0; i < 8; i++)
