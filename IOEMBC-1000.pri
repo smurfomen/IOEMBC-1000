@@ -10,3 +10,6 @@ HEADERS += \
 
 INCLUDEPATH += $$PWD/
 
+RESOURCES += \
+    $$PWD/resources.qrc
+

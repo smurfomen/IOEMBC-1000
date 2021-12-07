@@ -10,7 +10,7 @@
 namespace embc {
 
     /*! \brief  Initialization of I/O, SMBus and GPIO pins. */
-    bool init();
+    bool init(uint16_t deviceID = 0, uint16_t smbus_addr = 0);
 
     /*! \brief  Turn on WDT with timer settings. */
     void wdt_on(uint8_t timer);

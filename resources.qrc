@@ -1,0 +1,6 @@
+<RCC>
+    <qresource prefix="/lib">
+        <file>inpoutx64.dll</file>
+        <file>inpout32.dll</file>
+    </qresource>
+</RCC>

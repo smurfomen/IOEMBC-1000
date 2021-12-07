@@ -4,12 +4,31 @@
 #include <list>
 #include <string>
 #include <stdio.h>
+#include <iostream>
+#include <sstream>
+#include <iomanip>
+#include <thread>
+#include <chrono>
 
+#ifdef DEBUG
+#define LOG(x) (std::cout << x << std::endl);
+#else
+#define LOG(x)
+#endif
+
+
+template< typename T >
+std::string to_hex( T i )
+{
+  std::stringstream stream;
+  stream << "0x"
+         << std::setfill ('0') << std::setw(sizeof(T)*2)
+         << std::hex << i;
+  return stream.str();
+}
 
 #ifdef Q_OS_WIN
 #include <windows.h>
-#include <thread>
-#include <chrono>
 using call_outw = void(__stdcall *)(short, short);   // тип указатель на функцию вывода
 using call_inpw = short(__stdcall *)(short);			// тип указатель на функцию ввода
 using call_condition = int(__stdcall *)(void);    // тип указатель на функцию, возвращающую состояние
@@ -58,10 +77,6 @@ int iopl(int)
     }
 
     return success;
-}
-
-void usleep(int ms){
-    std::this_thread::sleep_for(std::chrono::milliseconds(ms));
 }
 
 uint8_t inb(uint16_t port)
@@ -425,15 +440,16 @@ namespace embc {
             uint32_t dwAddrVal;
 
             dwAddrVal= inl(PCI_CONFIG_DATA);
-            usleep(10);
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
             return dwAddrVal;
         };
 
         auto PCI_write(uint32_t dwDataVal) -> void
         {
             outl(dwDataVal,PCI_CONFIG_ADDR);
-            usleep(10);
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
         };
+
 
         /* { device ID, { config offset, bit 'is enabled'} } */
         std::map <uint16_t, std::pair<uint8_t, uint8_t>> configs = {
@@ -473,6 +489,25 @@ namespace embc {
             { INTEL_Sky_Lake_U_SOC_SMBUS_DEVICE_ID,     INTEL_Sky_Lake_U_SOC_SMBUS_VENDOR_ID    }
         };
 
+        /* { device ID, vendor ID } */
+        std::map <uint16_t, const char *> names = {
+            { VIA_VT8237_BUS_CTRL_DEVICE_ID,            "VT8237"            },
+            { VIA_CX700M_BUS_CTRL_DEVICE_ID,            "CX700M"            },
+            { VIA_VX900_BUS_CTRL_DEVICE_ID,             "VX900"             },
+            { INTEL_ICH4_SMBUS_DEVICE_ID,               "Intel ICH4"        },
+            { INTEL_ICH8_SMBUS_DEVICE_ID,               "Intel ICH8"        },
+            { INTEL_ICH10_SMBUS_DEVICE_ID,              "Intel ICH10"       },
+            { INTEL_NM10_SMBUS_DEVICE_ID,               "Intel NM10"        },
+            { INTEL_QM67_SMBUS_DEVICE_ID,               "Intel QM67"        },
+            { INTEL_QM77_SMBUS_DEVICE_ID,               "Intel QM77"        },
+            { INTEL_HM65_SMBUS_DEVICE_ID,               "Intel HM65"        },
+            { INTEL_HM76_SMBUS_DEVICE_ID,               "Intel HM76"        },
+            { INTEL_SOC_SMBUS_DEVICE_ID,                "Intel SOC"         },
+            { INTEL_Apollo_Lake_SOC_SMBUS_DEVICE_ID,    "Intel Apollo Lake" },
+            { INTEL_Sky_Lake_SOC_SMBUS_DEVICE_ID,       "Intel Sky Lake"    },
+            { INTEL_Sky_Lake_U_SOC_SMBUS_DEVICE_ID,     "Intel Sky Lake U"  }
+        };
+
         /* { device ID , { host smbus offset, mask }}  */
         std::map <uint16_t, std::pair<uint8_t, uint16_t>> bus_host_offset = {
             { VIA_VT8237_BUS_CTRL_DEVICE_ID,            { VT8237_SMBUS_HOST_IOBASE          , 0xff00} },
@@ -494,22 +529,34 @@ namespace embc {
 
 
         struct device_i {
-
         private:
             uint16_t device_id;
             uint32_t pci_base;
-            uint16_t bus_addr;
+            uint16_t smbus_addr;
         public:
 
             device_i(uint16_t device_id, uint32_t pci_base)
                 : device_id(device_id),
                   pci_base(pci_base),
-                  bus_addr(0)
+                  smbus_addr(0)
             {
                 PCI_write(pci_base + bus_host_offset[device_id].first);
-                bus_addr = (uint16_t)PCI_read() & bus_host_offset[device_id].second;
+                smbus_addr = (uint16_t)PCI_read() & bus_host_offset[device_id].second;
                 if(!isEnabled())
-                    bus_addr = 0;
+                    smbus_addr = 0;
+            }
+
+            device_i(uint16_t device_id)
+                : device_id(device_id),
+                  pci_base(0),
+                  smbus_addr(0)
+            {
+
+            }
+
+            void set_smbus(uint16_t addr)
+            {
+                smbus_addr = addr;
             }
 
             uint16_t id() const {
@@ -520,8 +567,21 @@ namespace embc {
                 return vendors[device_id];
             }
 
+            const char * name() const {
+                return names[device_id];
+            }
+
+            std::string description() const {
+                std::stringstream ss;
+                ss << "Name: " << name() << " ID: " << to_hex(id()) << '\n'
+                   << "Vendor: " << to_hex(vendor()) << '\n'
+                   << "PCI address: " << to_hex(pci_base) << '\n'
+                   << "BUS address: " << to_hex(smbus_addr) << '\n';
+                return ss.str();
+            }
+
             bool isEnabled() {
-                if(!bus_addr)
+                if(!smbus_addr || !pci_base)
                     return false;
 
                 PCI_write(pci_base + configs[device_id].first);
@@ -529,19 +589,11 @@ namespace embc {
             }
 
             void out(uint8_t byteOffset, uint8_t byteData) {
-                outb(byteData , bus_addr + byteOffset);
-                usleep(10);
+                outb(byteData , smbus_addr + byteOffset);
             }
 
             uint8_t inp(uint8_t byteOffset) {
-                uint8_t res = 0;
-                if(bus_addr)
-                {
-                   res = inb(bus_addr + byteOffset);
-                   usleep(10);
-                }
-
-                return res;
+                return smbus_addr ? inb(smbus_addr + byteOffset) : 0;
             }
 
             void clear() {
@@ -550,13 +602,14 @@ namespace embc {
             }
 
             bool is_busy() {
-
-                bool busy = false;
+                bool busy = inp(SMBHSTSTS) & SMBHSTSTS_BUSY;
                 int timeout = 5;
-                do {
-                   busy = inp(SMBHSTSTS) & SMBHSTSTS_BUSY;
-                   usleep(10);
-                } while(!busy && timeout--);
+                auto interval = std::chrono::milliseconds(5);
+                while(busy && timeout--)
+                {
+                    std::this_thread::sleep_for(interval);
+                    busy = inp(SMBHSTSTS) & SMBHSTSTS_BUSY;
+                }
 
                 return busy;
             }
@@ -564,6 +617,8 @@ namespace embc {
             bool wait() {
                 int	timeout = SMBUS_TIMEOUT;
                 int status = SMBUS_OK;
+                auto interval = std::chrono::milliseconds(5);
+
                 while (true)
                 {
                     if(!timeout--) {
@@ -571,8 +626,7 @@ namespace embc {
                         break;
                     }
 
-                    // I/O Delay
-                    usleep(100);
+                    std::this_thread::sleep_for(interval);
 
                     // Read Host Status Register
                     uint64_t r = inp(SMBHSTSTS) & 0xff;
@@ -642,7 +696,6 @@ namespace embc {
                 if (is_busy())
                     return false;
 
-
                 out(SMBHSTADD , F75111_INTERNAL_ADDR & ~1 );
                 out(SMBHSTCMD , target_addr );
                 out(SMBHSTDAT0, v );
@@ -661,72 +714,70 @@ namespace embc {
         {
             std::list<device_i> detected_devices;
 
-            uint16_t vendorID = 0;
-            uint16_t deviceID = 0;
-            for (int PCI_Bus = 0; PCI_Bus < 5; PCI_Bus++)
-            {
-                for (int PCI_Device = 0; PCI_Device<32; PCI_Device++)
+            auto init = [&detected_devices](uint32_t pci_base){
+                PCI_write(pci_base);
+
+                uint32_t result = PCI_read();
+
+                uint16_t venID = result & 0xffff;
+                uint16_t devID = (result >> 16) & 0xffff;
+
+                if(vendors.count(devID))
                 {
-                    for(int PCI_Function = 0; PCI_Function < 8 ; PCI_Function++ )
+                    if(vendors[devID] == venID)
                     {
-                        uint32_t pci_base = 0x80000000 + PCI_Bus*0x10000 + PCI_Device*0x800 + PCI_Function*0x100;
-                        PCI_write(pci_base);
-
-                        uint32_t result = PCI_read();
-
-                        vendorID = result & 0xffff;
-                        deviceID = (result >> 16) & 0xffff;
-
-                        if(vendors.count(deviceID))
+                        detected_devices.push_back(device_i(devID, pci_base));
+                    }
+                }
+                else if (venID == INTEL_ICH4_VENDOR_ID && devID == INTEL_ICH4_DEVICE_ID)
+                {
+                    int stride = 0x100;
+                    for (int i = 0; i < 8; i ++)
+                    {
+                        int base = pci_base + i * stride;
+                        PCI_write(base);
                         {
-                            if(vendors[deviceID] == vendorID)
+                            uint32_t result = PCI_read();
+
+                            venID = result & 0xffff;
+                            devID = (result >> 16) & 0xffff;
+
+                            if(vendors.count(devID))
                             {
-                                detected_devices.push_back(device_i(deviceID, pci_base));
-                            }
-                        }
-                        else if (vendorID == INTEL_ICH4_VENDOR_ID && deviceID == INTEL_ICH4_DEVICE_ID)
-                        {
-                            int stride = 0x100;
-                            for (int i = 0; i < 8; i ++)
-                            {
-                                int base = pci_base + i * stride;
-                                PCI_write(base);
+                                if(vendors[devID] == venID)
                                 {
-                                    uint32_t result = PCI_read();
-
-                                    vendorID = result & 0xffff;
-                                    deviceID = (result >> 16) & 0xffff;
-
-                                    if(vendors.count(deviceID))
-                                    {
-                                        if(vendors[deviceID] == vendorID)
-                                        {
-                                            device_i d(deviceID, base);
-                                            if(d.isEnabled())
-                                                detected_devices.push_back(d);
-                                        }
+                                    device_i d(devID, base);
+                                    if(d.isEnabled()) {
+                                        LOG(d.description());
+                                        detected_devices.push_back(d);
                                     }
                                 }
                             }
                         }
                     }
                 }
+            };
+
+            uint32_t pci_base = 0;
+            for (int PCI_Bus = 0; PCI_Bus < 5; PCI_Bus++)
+            {
+                for (int PCI_Device = 0; PCI_Device<32; PCI_Device++)
+                {
+                    for(int PCI_Function = 0; PCI_Function < 8 ; PCI_Function++ )
+                    {
+                        pci_base = 0x80000000 + PCI_Bus*0x10000 + PCI_Device*0x800 + PCI_Function*0x100;
+                        init(pci_base);
+                    }
+                }
             }
+
 
             return detected_devices;
         }
 
 
         bool status() {
-            static std::list<bus::device_i> devices = PCI_AutoDetect();
-            bool initialized = false;
-            if(!initialized && !devices.empty()) {
-                active_device = &devices.front();
-                initialized = dev().status_device(F75111_INTERNAL_ADDR);
-            }
-
-            /* PCI not detected */
-            return initialized;
+            return active_device && active_device->status_device(F75111_INTERNAL_ADDR);
         }
     }
 }
@@ -812,8 +863,24 @@ namespace embc {
         bus::dev().write(WDT_CONFIGURATION, WDT_TIMEOUT_FLAG | WDT_ENABLE | WDT_PULSE | WDT_PSWIDTH_100MS);
     }
 
-    bool init() {
+    bool init(uint16_t deviceID, uint16_t smbus_addr) {
         if(iopl(3) != -1) {
+            if(deviceID && smbus_addr)
+            {
+                bus::active_device = new bus::device_i(deviceID);
+                bus::active_device->set_smbus(smbus_addr);
+            }
+            else
+            {
+                static std::list<bus::device_i> devices = bus::PCI_AutoDetect();
+                for(auto & d : devices) {
+                    if(d.status_device(F75111_INTERNAL_ADDR))
+                    {
+                        bus::active_device = &d;
+                    }
+                }
+            }
+
             if(bus::status()) {
                 bus::dev().write(GPIO1X_CONTROL_MODE   , 0x00);
                 bus::dev().write(GPIO3X_CONTROL_MODE   , 0x00);
